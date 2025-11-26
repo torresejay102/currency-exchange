@@ -1,4 +1,4 @@
-package com.application.currency.exchange.domain.entity
+package com.application.currency.exchange.domain.entity.model
 
 import com.google.gson.annotations.SerializedName
 

@@ -1,6 +1,6 @@
 package com.application.currency.exchange.data.module
 
-import com.application.currency.exchange.data.datasource.api.CurrencyExchangeRateService
+import com.application.currency.exchange.data.datasource.api.service.CurrencyExchangeRateService
 import com.application.currency.exchange.data.repository.CurrencyExchangeRateRepository
 import com.application.currency.exchange.data.repository.CurrencyExchangeRateRepositoryImpl
 import dagger.Module
