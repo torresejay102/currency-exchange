@@ -68,11 +68,12 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
     implementation(libs.okhttp)
-//    implementation(libs.okhttp.logging)
     implementation(libs.gson)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.activity.ktx)
     implementation(libs.fragment.ktx)
     implementation(libs.searchable.dropdown.menu.jetpack.compose)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.material.icons.extended)
 }

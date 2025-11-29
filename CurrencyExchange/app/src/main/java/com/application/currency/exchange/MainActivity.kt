@@ -7,23 +7,29 @@ import android.view.WindowInsets
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.application.currency.exchange.domain.usecase.GetCurrencyExchangeRateUseCase
-import com.application.currency.exchange.presentation.view.screen.MainView
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.application.currency.exchange.domain.entity.model.Rate
+import com.application.currency.exchange.presentation.event.MainScreenEvent
+import com.application.currency.exchange.presentation.state.MainScreenState
+import com.application.currency.exchange.presentation.view.screen.MainScreen
+import com.application.currency.exchange.presentation.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
+import kotlin.jvm.java
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    @Inject
-    lateinit var getCurrencyExchangeRateUseCase: GetCurrencyExchangeRateUseCase
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         setStatusBarColor(window, resources.getColor(R.color.primary_color,
             null))
         setContent {
-            MainView()
+            val mainViewModel: MainViewModel = hiltViewModel()
+            val state = mainViewModel.state.collectAsStateWithLifecycle().value
+            MainScreen(state as MainScreenState, mainViewModel::onEvent)
         }
     }
 

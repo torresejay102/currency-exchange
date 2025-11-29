@@ -1,8 +1,9 @@
 <resources>
-    <string name="app_name">Currency Exchange</string>
+    <string name="app_name">Currency Converter</string>
     <string name="currency_converter">Currency Converter</string>
     <string name="my_balances">My Balances</string>
     <string name="sell">Sell</string>
     <string name="receive">Receive</string>
     <string name="submit">Submit</string>
+    <string name="currency_converter_unavailable">Currency Converter Unavailable</string>
 </resources>

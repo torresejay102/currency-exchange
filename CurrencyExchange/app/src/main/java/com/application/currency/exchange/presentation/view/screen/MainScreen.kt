@@ -12,17 +12,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import com.application.currency.exchange.R
+import com.application.currency.exchange.presentation.event.MainScreenEvent
+import com.application.currency.exchange.presentation.state.MainScreenState
+import com.application.currency.exchange.presentation.view.content.MainScreenContent
 import com.application.currency.exchange.ui.theme.CurrencyExchangeTheme
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun MainView() {
+fun MainScreen(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit) {
+    LaunchedEffect(onEvent) {
+        onEvent(MainScreenEvent.OnGetExchangeRate)
+    }
     CurrencyExchangeTheme {
         Scaffold(modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -44,13 +50,7 @@ fun MainView() {
                 )
             }
         ) { innerPadding ->
-            CurrencyConverterView(innerPadding)
+            MainScreenContent(state, onEvent,innerPadding)
         }
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PreviewMainView() {
-    MainView()
 }
