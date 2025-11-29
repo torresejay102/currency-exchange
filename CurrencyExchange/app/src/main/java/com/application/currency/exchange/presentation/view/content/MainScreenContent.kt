@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -61,12 +62,11 @@ import com.application.currency.exchange.presentation.state.MainScreenState
 import com.application.currency.exchange.presentation.view.custom.ProgressDialog
 import com.kanyidev.searchable_dropdown.DropdownMenuItem
 import com.kanyidev.searchable_dropdown.LargeSearchableDropdownMenu
+import kotlin.collections.filter
 
 @Composable
 fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit,
                       paddingValues: PaddingValues? = null) {
-    val headerFontSize = 20.sp
-
     when(state) {
         is MainScreenState.Loading -> {
             Column(
@@ -78,58 +78,7 @@ fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit
         }
         is MainScreenState.Success -> {
             val rates = state.list
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White)
-                    .padding(paddingValues ?: PaddingValues(0.dp))
-                    .padding(PaddingValues(20.dp))
-                    .imePadding()
-            ) {
-                Text(
-                    stringResource(R.string.my_balances).toUpperCase(Locale.current),
-                    fontSize = headerFontSize,
-                    color = Color.DarkGray)
-
-                // Balance List
-                LazyRow(
-                    contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(30.dp)
-                ) {
-                    items(items = rates, itemContent = {rate: Rate ->
-                        Text("${rate.amount} ${rate.currency}",
-                            fontSize = 18.sp, color = Color.Black)
-                    })
-                }
-
-                Text(
-                    stringResource(R.string.app_name).toUpperCase(Locale.current),
-                    modifier = Modifier.padding(PaddingValues(top = 20.dp)),
-                    fontSize = headerFontSize,
-                    color = Color.DarkGray)
-
-                ExchangeRowView(R.drawable.arrow_circle_up, R.string.sell,
-                    rates.filter { it.baseCurrency == null })
-
-                ExchangeRowView(R.drawable.arrow_circle_down, R.string.receive,
-                    rates, false, false)
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Button(onClick = { /* Handle click */ },
-                    shape = RoundedCornerShape(30.dp),
-                    modifier = Modifier
-                        .padding(top = 60.dp, bottom = 40.dp)
-                        .fillMaxWidth()
-                        .height(60.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
-                        contentColor = Color.White)
-                ) {
-                    Text(stringResource(R.string.submit), fontSize = 18.sp)
-                }
-            }
+            CurrencyConverterContent(paddingValues, rates, onEvent)
         }
 
         // Shows that currency converter is unavailable if there is an error in retrieval
@@ -147,6 +96,13 @@ fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit
                     state.errorMessage, Toast.LENGTH_SHORT).show()
             }
         }
+
+        is MainScreenState.ReceiveValueUpdated -> {
+            CurrencyConverterContent(paddingValues, state.list,
+                onEvent, state.sellRate, state.receiveRate,
+                state.sellValue, state.receiveValue)
+        }
+
         else -> {
 
         }
@@ -154,37 +110,89 @@ fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit
 }
 
 @Composable
-fun ExchangeRowView(@DrawableRes imageId: Int, @StringRes strId: Int, rates: List<Rate>,
-                    isTextFieldEnabled: Boolean = true, showDivider: Boolean = true) {
-    val currencies = mutableListOf<String>()
-    rates.forEach {
-        currencies.add(it.currency)
-    }
+fun CurrencyConverterContent(paddingValues: PaddingValues?, rates: List<Rate>,
+                             onEvent: (MainScreenEvent) -> Unit,
+                             sellRate: Rate? = null, receiveRate: Rate? = null,
+                             sellValue: Float? = null, receiveValue: Float? = null) {
+    val headerFontSize = 20.sp
 
-    var selectedIndex by remember { mutableStateOf<String?>(currencies[0]) }
-    val iconTextFontSize = 18.sp
-    val imageSize = Modifier.size(width = 50.dp, height = 50.dp)
+    val sellRates = rates.filter { it.baseCurrency == null }
+    val sellRowRate = sellRate ?: sellRates[0]
+    val sellAmount = sellValue ?: sellRowRate.amount
+    val receiveRowRate = receiveRate ?: rates[0]
+    val receiveAmount = receiveValue ?: (receiveRowRate.convertedValue * sellAmount)
+
+    onEvent(MainScreenEvent.OnInitSellValue(sellAmount))
+    onEvent(MainScreenEvent.OnInitReceiveValue(receiveAmount))
+    onEvent(MainScreenEvent.OnInitSellCurrency(sellRowRate))
+    onEvent(MainScreenEvent.OnInitReceiveCurrency(receiveRowRate))
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(paddingValues ?: PaddingValues(0.dp))
+            .padding(PaddingValues(20.dp))
+            .imePadding()
+    ) {
+        Text(
+            stringResource(R.string.my_balances).toUpperCase(Locale.current),
+            fontSize = headerFontSize,
+            color = Color.DarkGray)
+
+        // Balance List
+        LazyRow(
+            contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(30.dp)
+        ) {
+            items(items = rates.sortedByDescending { it.amount }, itemContent = {rate: Rate ->
+                Text("${rate.amount} ${rate.currency}",
+                    fontSize = 18.sp, color = Color.Black)
+            })
+        }
+
+        Text(
+            stringResource(R.string.app_name).toUpperCase(Locale.current),
+            modifier = Modifier.padding(PaddingValues(top = 20.dp)),
+            fontSize = headerFontSize,
+            color = Color.DarkGray)
+
+        SellRowView(sellRates, sellRowRate, sellAmount.toString(), onEvent)
+
+        ReceiveRowView(rates, receiveRowRate, receiveAmount.toString(),
+            onEvent)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
+            shape = RoundedCornerShape(30.dp),
+            modifier = Modifier
+                .padding(top = 60.dp, bottom = 40.dp)
+                .fillMaxWidth()
+                .height(60.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
+                contentColor = Color.White)
+        ) {
+            Text(stringResource(R.string.submit), fontSize = 18.sp)
+        }
+    }
+}
+
+@Composable
+fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
+                onEvent: (MainScreenEvent) -> Unit) {
+    var text by remember { mutableStateOf(amount) }
 
     val customTextSelectionColors = TextSelectionColors(
         handleColor = colorResource(R.color.primary_color),
         backgroundColor = colorResource(R.color.primary_color),
     )
 
-    var text by remember { mutableStateOf("0.00") }
-
     Row(verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(PaddingValues(top = 20.dp))) {
-        Image(
-            modifier = imageSize ,
-            painter = painterResource(id = imageId),
-            contentDescription = stringResource(strId),
-        )
 
-        Text(
-            stringResource(strId),
-            modifier = Modifier.padding(PaddingValues(start = 5.dp)),
-            fontSize = iconTextFontSize,
-            color = Color.DarkGray)
+        LeftRow(R.drawable.arrow_circle_up, R.string.sell)
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -210,33 +218,92 @@ fun ExchangeRowView(@DrawableRes imageId: Int, @StringRes strId: Int, rates: Lis
                 ),
                 textStyle = TextStyle(textAlign = TextAlign.End),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                enabled = isTextFieldEnabled
             )
         }
 
-        LargeSearchableDropdownMenu(
-            options = currencies,
-            selectedOption = selectedIndex,
-            onItemSelected = {
-                selectedIndex = it
-            },
-            placeholder = "Currency",
-            drawItem = { item, _, _, onClick ->
-                DropdownMenuItem(onClick = onClick,
-                    text = item,
-                    textStyle = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Medium
-                    ),
-                    selected = selectedIndex == item,
-                    enabled = true)
-            },
-            modifier = Modifier
-                .width(100.dp)
-                .background(Color.White)
-        )
+        DropDownMenu(rates, selectedRate, onEvent)
     }
 
-    if(showDivider)
-        HorizontalDivider(color = Color.LightGray,
-            modifier = Modifier.padding(top = 10.dp, start = 65.dp))
+    HorizontalDivider(color = Color.LightGray, modifier =
+        Modifier.padding(top = 10.dp, start = 65.dp))
+}
+
+@Composable
+fun ReceiveRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
+                   onEvent: (MainScreenEvent) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(PaddingValues(top = 20.dp))) {
+        LeftRow(R.drawable.arrow_circle_down, R.string.receive)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Text(amount, modifier = Modifier.wrapContentWidth()
+            .widthIn(40.dp, 120.dp)
+            .padding(start = 20.dp, end = 10.dp),
+            color = colorResource(R.color.green))
+
+        DropDownMenu(rates, selectedRate, onEvent, false)
+    }
+}
+
+@Composable
+fun DropDownMenu(rates: List<Rate>, selectedRate: Rate, onEvent: (MainScreenEvent) -> Unit,
+                 isSell: Boolean = true) {
+
+    val currencies = mutableListOf<String>()
+    rates.forEach {
+        currencies.add(it.currency)
+    }
+
+    val selectedCurrency = currencies.find { it == selectedRate.currency }.orEmpty()
+
+    var selectedIndex by remember { mutableStateOf<String?>(selectedCurrency) }
+
+    LargeSearchableDropdownMenu(
+        options = currencies,
+        selectedOption = selectedIndex,
+        onItemSelected = {
+            selectedIndex = it
+            if(!isSell) {
+                rates.find { it.currency == selectedIndex }?.let { rate ->
+                    onEvent(MainScreenEvent.OnUpdateReceiveCurrency(rate))
+                }
+            }
+        },
+        placeholder = "Currency",
+        drawItem = { item, _, _, onClick ->
+            DropdownMenuItem(onClick = onClick,
+                text = item,
+                textStyle = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Medium
+                ),
+                selected = selectedIndex == item,
+                enabled = true)
+        },
+        modifier = Modifier
+            .width(100.dp)
+            .background(Color.White)
+    )
+}
+
+@Composable
+fun LeftRow(@DrawableRes imageId: Int, @StringRes strId: Int) {
+    val iconTextFontSize = 18.sp
+    val imageSize = Modifier.size(width = 50.dp, height = 50.dp)
+
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.wrapContentSize()) {
+        Image(
+            modifier = imageSize,
+            painter = painterResource(id = imageId),
+            contentDescription = stringResource(strId),
+        )
+
+        Text(
+            stringResource(strId),
+            modifier = Modifier.padding(PaddingValues(start = 5.dp)),
+            fontSize = iconTextFontSize,
+            color = Color.DarkGray
+        )
+    }
 }
