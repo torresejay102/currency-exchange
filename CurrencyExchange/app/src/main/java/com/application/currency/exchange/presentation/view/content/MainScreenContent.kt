@@ -1,6 +1,6 @@
 package com.application.currency.exchange.presentation.view.content
 
-import android.R.attr.text
+import android.R.attr.textStyle
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation.Companion.keyboardOptions
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Button
@@ -116,11 +117,17 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, rates: List<Rate>,
                              sellValue: Float? = null, receiveValue: Float? = null) {
     val headerFontSize = 20.sp
 
-    val sellRates = rates.filter { it.baseCurrency == null }
+    val sellRates = rates.filter { it.amount > 0 }
+    val receiveRates =
+        if(sellRate == null) rates.filter { it.conversionMap.contains(sellRates[0].currency) }
+            else rates.filter { it.conversionMap.contains(sellRate.currency) }
+
     val sellRowRate = sellRate ?: sellRates[0]
     val sellAmount = sellValue ?: sellRowRate.amount
-    val receiveRowRate = receiveRate ?: rates[0]
-    val receiveAmount = receiveValue ?: (receiveRowRate.convertedValue * sellAmount)
+    val receiveRowRate = receiveRate ?: receiveRates[0]
+    val receiveAmount = receiveValue ?: (receiveRowRate.conversionMap[sellRowRate.currency]?.value?.let {
+        it * sellAmount
+    } ?: 0f)
 
     onEvent(MainScreenEvent.OnInitSellValue(sellAmount))
     onEvent(MainScreenEvent.OnInitReceiveValue(receiveAmount))
@@ -160,7 +167,7 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, rates: List<Rate>,
 
         SellRowView(sellRates, sellRowRate, sellAmount.toString(), onEvent)
 
-        ReceiveRowView(rates, receiveRowRate, receiveAmount.toString(),
+        ReceiveRowView(receiveRates, receiveRowRate, receiveAmount.toString(),
             onEvent)
 
         Spacer(modifier = Modifier.weight(1f))
@@ -199,7 +206,19 @@ fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
         CompositionLocalProvider(LocalTextSelectionColors provides customTextSelectionColors) {
             TextField(
                 value = text,
-                onValueChange = { newText -> text = newText },
+                onValueChange =
+                    { newText ->
+                        val num = newText.toFloatOrNull()
+                        num?.let {
+                            if (it <= selectedRate.amount && it >= 0) {
+                                text = newText
+                                onEvent(MainScreenEvent.OnUpdateSellValue(newText.toFloat()))
+                            }
+                        } ?: run {
+                            text = newText
+                            onEvent(MainScreenEvent.OnUpdateSellValue(0f))
+                        }
+                    },
                 modifier = Modifier
                     .wrapContentWidth()
                     .widthIn(40.dp, 120.dp)

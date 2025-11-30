@@ -1,6 +1,7 @@
 package com.application.currency.exchange.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
+import com.application.currency.exchange.domain.entity.model.ConversionValue
 import com.application.currency.exchange.domain.entity.model.Rate
 import com.application.currency.exchange.domain.entity.network.NetworkResult
 import com.application.currency.exchange.domain.usecase.GetCurrencyExchangeRateUseCase
@@ -46,16 +47,24 @@ class MainViewModel @Inject constructor(private val getCurrencyExchangeRateUseCa
                                 val rates = mutableListOf<Rate>()
                                 val currencyExchangeRate = result.data
                                 val list = currencyExchangeRate.rates
+
+                                val baseRate = Rate(currencyExchangeRate.base,
+                                    mutableMapOf())
+                                rates.add(baseRate)
+                                if(baseRate.currency == "EUR")
+                                    baseRate.amount = 1000f
+
                                 list.forEach { key, value ->
-                                    rates.add(Rate(key, value.toFloat(),
-                                        currencyExchangeRate.date,
-                                        if(currencyExchangeRate.base == key) null
-                                        else currencyExchangeRate.base,
-                                        if(currencyExchangeRate.base == key) 1000f
-                                        else 0f))
+                                    val rate = Rate(key, mutableMapOf())
+                                    val conversionValue = ConversionValue(
+                                        value.toFloat(), currencyExchangeRate.date)
+                                    rate.conversionMap[baseRate.currency] = conversionValue
+                                    baseRate.conversionMap[rate.currency] = conversionValue
+                                    rates.add(rate)
                                 }
-                                this@MainViewModel.rates = rates
-                                _state.value = MainScreenState.Success(rates)
+                                this@MainViewModel.rates = rates.sortedBy { it.currency }
+                                    .toMutableList()
+                                _state.value = MainScreenState.Success(this@MainViewModel.rates)
                             }
                         }
                     }
@@ -92,26 +101,31 @@ class MainViewModel @Inject constructor(private val getCurrencyExchangeRateUseCa
 
         private fun updateRateValues() {
             if(::sellRate.isInitialized && ::receiveRate.isInitialized) {
-                receiveValue = sellValue * receiveRate.convertedValue
-                _state.value = MainScreenState.ReceiveValueUpdated(rates, sellValue,
-                    receiveValue, sellRate, receiveRate)
+                receiveRate.conversionMap[sellRate.currency]?.let {
+                    receiveValue = sellValue * it.value
+                    _state.value = MainScreenState.ReceiveValueUpdated(rates, sellValue,
+                        receiveValue, sellRate, receiveRate)
+                }
             }
         }
 
         private fun updateBalances() {
-            println("RECEIVE VALUE: "+receiveValue)
-            sellRate.amount -= sellValue
-            receiveRate.amount += receiveValue
-            sellValue = sellRate.amount
-            receiveValue = sellValue * receiveRate.convertedValue
+            receiveRate.conversionMap[sellRate.currency]?.let {
+                sellRate.amount -= sellValue
+                receiveRate.amount += receiveValue
+                sellValue = sellRate.amount
+                receiveValue = sellValue * it.value
 
-            val sellIndex = rates.indexOfFirst { it.currency == sellRate.currency }
-            val receiveIndex = rates.indexOfFirst { it.currency == receiveRate.currency }
+                val sellIndex = rates.indexOfFirst { it.currency == sellRate.currency }
+                val receiveIndex = rates.indexOfFirst { it.currency == receiveRate.currency }
 
-            rates[sellIndex] = sellRate
-            rates[receiveIndex] = receiveRate
+                rates[sellIndex] = sellRate
+                rates[receiveIndex] = receiveRate
 
-            _state.value = MainScreenState.ReceiveValueUpdated(rates, sellValue,
-                receiveValue, sellRate, receiveRate)
+                _state.value = MainScreenState.ReceiveValueUpdated(
+                    rates, sellValue,
+                    receiveValue, sellRate, receiveRate
+                )
+            }
         }
 }
