@@ -31,10 +31,10 @@ import com.application.currency.exchange.ui.theme.CurrencyExchangeTheme
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun MainScreen(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit) {
+fun MainScreen(state: MainScreenState, queueEvent: (MainScreenEvent) -> Unit) {
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-    LaunchedEffect(onEvent) {
-        onEvent(MainScreenEvent.OnGetExchangeRate)
+    LaunchedEffect(Unit) {
+        queueEvent(MainScreenEvent.OnGetExchangeRate)
     }
     CurrencyExchangeTheme {
         Scaffold(modifier = Modifier.fillMaxSize(),
@@ -57,7 +57,7 @@ fun MainScreen(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit) {
                 )
             }
         ) { innerPadding ->
-            MainScreenContent(state, onEvent,innerPadding)
+            MainScreenContent(state, queueEvent,innerPadding)
         }
     }
 }

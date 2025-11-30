@@ -1,6 +1,5 @@
 package com.application.currency.exchange.presentation.view.content
 
-import android.R.attr.textStyle
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -73,20 +72,20 @@ import kotlinx.coroutines.delay
 import kotlin.math.round
 
 @Composable
-fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit,
+fun MainScreenContent(state: MainScreenState, queueEvent: (MainScreenEvent) -> Unit,
                       paddingValues: PaddingValues? = null) {
 
     val autoRefreshInterval = 5000L
     val balanceRates = remember { mutableStateListOf<Rate>() }
 
     LaunchedEffect(Unit) {
-        while(true) {
+        while (true) {
             delay(autoRefreshInterval)
-            onEvent(MainScreenEvent.OnRefreshExchangeRate)
+            queueEvent(MainScreenEvent.OnRefreshExchangeRate)
         }
     }
 
-    CurrencyConverterContent(paddingValues, onEvent, state,balanceRates)
+    CurrencyConverterContent(paddingValues, queueEvent, state,balanceRates)
 }
 
 @Composable
@@ -106,7 +105,6 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, onEvent: (MainScreen
         info = state.info
     else if(state is MainScreenState.BalanceUpdated) {
         info = state.info
-        showDialog = true
         dialogMessage = state.message
     }
 
@@ -180,7 +178,11 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, onEvent: (MainScreen
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
+                Button(
+                    onClick = {
+                        onEvent(MainScreenEvent.OnUpdateBalance)
+                        showDialog = true
+                    },
                     shape = RoundedCornerShape(30.dp),
                     modifier = Modifier
                         .padding(top = 60.dp, bottom = 40.dp)
@@ -195,7 +197,7 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, onEvent: (MainScreen
 
             if (showDialog) {
                 AlertDialog(
-                    onDismissRequest = { showDialog = false },
+                    onDismissRequest = { },
                     title = {
                         Text(
                             stringResource(R.string.currency_converted),
@@ -256,9 +258,6 @@ fun SellRowView(info: ExchangeRateInfo, onEvent: (MainScreenEvent) -> Unit) {
     val sellRates = info.rates.filter { it.amount > 0 }
     val sellRowRate = info.sellRate ?: sellRates[0]
     val sellAmount = info.sellValue ?: sellRowRate.amount
-
-    onEvent(MainScreenEvent.OnInitSellValue(sellAmount))
-    onEvent(MainScreenEvent.OnInitSellCurrency(sellRowRate))
 
     var text by remember { mutableStateOf(sellAmount.toString()) }
     text = sellAmount.toString()
@@ -347,9 +346,6 @@ fun ReceiveRowView(info: ExchangeRateInfo,
         round(it * sellAmount * 100) / 100
     } ?: 0f)
 
-    onEvent(MainScreenEvent.OnInitReceiveValue(receiveAmount))
-    onEvent(MainScreenEvent.OnInitReceiveCurrency(receiveRowRate))
-
     Row(verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(PaddingValues(top = 20.dp))) {
         LeftRow(R.drawable.arrow_circle_down, R.string.receive)
@@ -375,16 +371,17 @@ fun DropDownMenu(rates: List<Rate>, selectedRate: Rate, onEvent: (MainScreenEven
         currencies.add(it.currency)
     }
 
-    val selectedCurrency = currencies.find { it == selectedRate.currency }.orEmpty()
+    val currency = currencies.find { it == selectedRate.currency }.orEmpty()
 
-    var selectedIndex by remember { mutableStateOf<String?>(selectedCurrency) }
+    var selectedCurrency by remember { mutableStateOf<String?>(currency) }
+    selectedCurrency = currency
 
     LargeSearchableDropdownMenu(
         options = currencies,
-        selectedOption = selectedIndex,
+        selectedOption = selectedCurrency,
         onItemSelected = {
-            selectedIndex = it
-            rates.find { it.currency == selectedIndex }?.let { rate ->
+            selectedCurrency = it
+            rates.find { it.currency == selectedCurrency }?.let { rate ->
                 if(isSell)
                     onEvent(MainScreenEvent.OnUpdateSellCurrency(rate))
                 else
@@ -398,7 +395,7 @@ fun DropDownMenu(rates: List<Rate>, selectedRate: Rate, onEvent: (MainScreenEven
                 textStyle = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Medium
                 ),
-                selected = selectedIndex == item,
+                selected = selectedCurrency == item,
                 enabled = true)
         },
         modifier = Modifier

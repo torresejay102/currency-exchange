@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
             val state = mainViewModel.state.collectAsStateWithLifecycle().value
-            MainScreen(state as MainScreenState, mainViewModel::onEvent)
+            MainScreen(state as MainScreenState, mainViewModel::queueEvent)
         }
     }
 
