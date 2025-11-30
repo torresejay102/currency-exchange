@@ -1,6 +1,5 @@
 package com.application.currency.exchange.presentation.view.content
 
-import android.R.attr.textStyle
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -25,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.InputTransformation.Companion.keyboardOptions
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Button
@@ -38,9 +36,11 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,82 +57,35 @@ import androidx.compose.ui.text.toUpperCase
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.application.currency.exchange.R
+import com.application.currency.exchange.domain.entity.model.ExchangeRateInfo
 import com.application.currency.exchange.domain.entity.model.Rate
 import com.application.currency.exchange.presentation.event.MainScreenEvent
 import com.application.currency.exchange.presentation.state.MainScreenState
 import com.application.currency.exchange.presentation.view.custom.ProgressDialog
 import com.kanyidev.searchable_dropdown.DropdownMenuItem
 import com.kanyidev.searchable_dropdown.LargeSearchableDropdownMenu
-import kotlin.collections.filter
+import kotlinx.coroutines.delay
+import kotlin.math.round
 
 @Composable
 fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit,
                       paddingValues: PaddingValues? = null) {
-    when(state) {
-        is MainScreenState.Loading -> {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                ProgressDialog()
-            }
-        }
-        is MainScreenState.Success -> {
-            val rates = state.list
-            CurrencyConverterContent(paddingValues, rates, onEvent)
-        }
 
-        // Shows that currency converter is unavailable if there is an error in retrieval
-        // e.g. No Internet Connection
-        is MainScreenState.Error -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues ?: PaddingValues(0.dp)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center) {
-                Text(stringResource(R.string.currency_converter_unavailable))
-
-                Toast.makeText(LocalContext.current,
-                    state.errorMessage, Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        is MainScreenState.ReceiveValueUpdated -> {
-            CurrencyConverterContent(paddingValues, state.list,
-                onEvent, state.sellRate, state.receiveRate,
-                state.sellValue, state.receiveValue)
-        }
-
-        else -> {
-
-        }
-    }
+    val rates = remember { mutableStateListOf<Rate>() }
+    CurrencyConverterContent(paddingValues, onEvent, state, rates)
 }
 
 @Composable
-fun CurrencyConverterContent(paddingValues: PaddingValues?, rates: List<Rate>,
-                             onEvent: (MainScreenEvent) -> Unit,
-                             sellRate: Rate? = null, receiveRate: Rate? = null,
-                             sellValue: Float? = null, receiveValue: Float? = null) {
+fun CurrencyConverterContent(paddingValues: PaddingValues?, onEvent: (MainScreenEvent) -> Unit,
+                             state: MainScreenState, ratesSnapShot: SnapshotStateList<Rate>) {
     val headerFontSize = 20.sp
 
-    val sellRates = rates.filter { it.amount > 0 }
-    val receiveRates =
-        if(sellRate == null) rates.filter { it.conversionMap.contains(sellRates[0].currency) }
-            else rates.filter { it.conversionMap.contains(sellRate.currency) }
+    var info: ExchangeRateInfo? = null
 
-    val sellRowRate = sellRate ?: sellRates[0]
-    val sellAmount = sellValue ?: sellRowRate.amount
-    val receiveRowRate = receiveRate ?: receiveRates[0]
-    val receiveAmount = receiveValue ?: (receiveRowRate.conversionMap[sellRowRate.currency]?.value?.let {
-        it * sellAmount
-    } ?: 0f)
-
-    onEvent(MainScreenEvent.OnInitSellValue(sellAmount))
-    onEvent(MainScreenEvent.OnInitReceiveValue(receiveAmount))
-    onEvent(MainScreenEvent.OnInitSellCurrency(sellRowRate))
-    onEvent(MainScreenEvent.OnInitReceiveCurrency(receiveRowRate))
+    if(state is MainScreenState.Success)
+        info = ExchangeRateInfo(state.list)
+    else if(state is MainScreenState.ReceiveValueUpdated)
+        info = state.info
 
     Column(
         modifier = Modifier
@@ -142,54 +95,91 @@ fun CurrencyConverterContent(paddingValues: PaddingValues?, rates: List<Rate>,
             .padding(PaddingValues(20.dp))
             .imePadding()
     ) {
-        Text(
-            stringResource(R.string.my_balances).toUpperCase(Locale.current),
-            fontSize = headerFontSize,
-            color = Color.DarkGray)
+        info?.let {
+            val rates = it.rates
+            ratesSnapShot.clear()
+            ratesSnapShot.addAll(rates.filter { it.amount > 0 }
+                .sortedByDescending { it.amount })
 
-        // Balance List
-        LazyRow(
-            contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(30.dp)
-        ) {
-            items(items = rates.sortedByDescending { it.amount }, itemContent = {rate: Rate ->
-                Text("${rate.amount} ${rate.currency}",
-                    fontSize = 18.sp, color = Color.Black)
-            })
+            Text(
+                stringResource(R.string.my_balances).toUpperCase(Locale.current),
+                fontSize = headerFontSize,
+                color = Color.DarkGray)
+
+            // Balance List
+            LazyRow(
+                contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(30.dp)
+            ) {
+                items(items = ratesSnapShot, itemContent = {rate: Rate ->
+                    Text("${rate.amount} ${rate.currency}",
+                        fontSize = 18.sp, color = Color.Black)
+                })
+            }
+
+            Text(
+                stringResource(R.string.app_name).toUpperCase(Locale.current),
+                modifier = Modifier.padding(PaddingValues(top = 20.dp)),
+                fontSize = headerFontSize,
+                color = Color.DarkGray)
+
+            SellRowView(info, onEvent)
+
+            ReceiveRowView(info, onEvent)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
+                shape = RoundedCornerShape(30.dp),
+                modifier = Modifier
+                    .padding(top = 60.dp, bottom = 40.dp)
+                    .fillMaxWidth()
+                    .height(60.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
+                    contentColor = Color.White)
+            ) {
+                Text(stringResource(R.string.submit), fontSize = 18.sp)
+            }
         }
 
-        Text(
-            stringResource(R.string.app_name).toUpperCase(Locale.current),
-            modifier = Modifier.padding(PaddingValues(top = 20.dp)),
-            fontSize = headerFontSize,
-            color = Color.DarkGray)
+        if(state is MainScreenState.Loading) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                ProgressDialog()
+            }
+        }
 
-        SellRowView(sellRates, sellRowRate, sellAmount.toString(), onEvent)
+        if(state is MainScreenState.Error) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues ?: PaddingValues(0.dp)),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(stringResource(R.string.currency_converter_unavailable))
 
-        ReceiveRowView(receiveRates, receiveRowRate, receiveAmount.toString(),
-            onEvent)
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
-            shape = RoundedCornerShape(30.dp),
-            modifier = Modifier
-                .padding(top = 60.dp, bottom = 40.dp)
-                .fillMaxWidth()
-                .height(60.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
-                contentColor = Color.White)
-        ) {
-            Text(stringResource(R.string.submit), fontSize = 18.sp)
+                Toast.makeText(LocalContext.current,
+                    state.errorMessage, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }
 
 @Composable
-fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
-                onEvent: (MainScreenEvent) -> Unit) {
-    var text by remember { mutableStateOf(amount) }
+fun SellRowView(info: ExchangeRateInfo, onEvent: (MainScreenEvent) -> Unit) {
+    val sellRates = info.rates.filter { it.amount > 0 }
+    val sellRowRate = info.sellRate ?: sellRates[0]
+    val sellAmount = info.sellValue ?: sellRowRate.amount
+
+    onEvent(MainScreenEvent.OnInitSellValue(sellAmount))
+    onEvent(MainScreenEvent.OnInitSellCurrency(sellRowRate))
+
+    var text by remember { mutableStateOf(sellAmount.toString()) }
+    text = sellAmount.toString()
 
     val customTextSelectionColors = TextSelectionColors(
         handleColor = colorResource(R.color.primary_color),
@@ -210,9 +200,23 @@ fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
                     { newText ->
                         val num = newText.toFloatOrNull()
                         num?.let {
-                            if (it <= selectedRate.amount && it >= 0) {
-                                text = newText
-                                onEvent(MainScreenEvent.OnUpdateSellValue(newText.toFloat()))
+                            val filteredText = newText.filter { it.isDigit() || it == '.' }
+                            if (filteredText.count { it == '.' } <= 1) {
+                                val parts = filteredText.split('.')
+                                var isFiltered = false
+                                if (parts.size > 1) {
+                                    val decimalPart = parts[1]
+                                    if (decimalPart.length <= 2) {
+                                        isFiltered = true
+                                    }
+                                } else {
+                                    isFiltered = true
+                                }
+
+                                if (it <= sellRowRate.amount && it >= 0 && isFiltered) {
+                                    text = newText
+                                    onEvent(MainScreenEvent.OnUpdateSellValue(newText.toFloat()))
+                                }
                             }
                         } ?: run {
                             text = newText
@@ -227,20 +231,18 @@ fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
                     unfocusedContainerColor = Color.Transparent,
                     focusedContainerColor = Color.Transparent,
                     unfocusedIndicatorColor = colorResource(R.color.primary_color),
-                    disabledTextColor = colorResource(R.color.green),
                     focusedTextColor = Color.Black,
                     unfocusedTextColor = Color.Black,
-                    disabledContainerColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
                     focusedIndicatorColor = colorResource(R.color.primary_color),
                     cursorColor = Color.Black,
                 ),
                 textStyle = TextStyle(textAlign = TextAlign.End),
+                singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             )
         }
 
-        DropDownMenu(rates, selectedRate, onEvent)
+        DropDownMenu(sellRates, sellRowRate, onEvent)
     }
 
     HorizontalDivider(color = Color.LightGray, modifier =
@@ -248,20 +250,36 @@ fun SellRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
 }
 
 @Composable
-fun ReceiveRowView(rates: List<Rate>, selectedRate: Rate, amount: String,
+fun ReceiveRowView(info: ExchangeRateInfo,
                    onEvent: (MainScreenEvent) -> Unit) {
+    val sellRates = info.rates.filter { it.amount > 0 }
+    val sellRowRate = info.sellRate ?: sellRates[0]
+    val sellAmount = info.sellValue ?: sellRowRate.amount
+
+    val receiveRates =
+        if(info.sellRate == null) info.rates.filter { it.conversionMap.contains(sellRates[0].currency) }
+        else info.rates.filter { it.conversionMap.contains(info.sellRate.currency) }
+
+    val receiveRowRate = info.receiveRate ?: receiveRates[0]
+    val receiveAmount = info.receiveValue ?: (receiveRowRate.conversionMap[sellRowRate.currency]?.value?.let {
+        round(it * sellAmount * 100) / 100
+    } ?: 0f)
+
+    onEvent(MainScreenEvent.OnInitReceiveValue(receiveAmount))
+    onEvent(MainScreenEvent.OnInitReceiveCurrency(receiveRowRate))
+
     Row(verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(PaddingValues(top = 20.dp))) {
         LeftRow(R.drawable.arrow_circle_down, R.string.receive)
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Text(amount, modifier = Modifier.wrapContentWidth()
+        Text(receiveAmount.toString(), modifier = Modifier.wrapContentWidth()
             .widthIn(40.dp, 120.dp)
             .padding(start = 20.dp, end = 10.dp),
             color = colorResource(R.color.green))
 
-        DropDownMenu(rates, selectedRate, onEvent, false)
+        DropDownMenu(receiveRates, receiveRowRate, onEvent, false)
     }
 }
 
@@ -283,10 +301,11 @@ fun DropDownMenu(rates: List<Rate>, selectedRate: Rate, onEvent: (MainScreenEven
         selectedOption = selectedIndex,
         onItemSelected = {
             selectedIndex = it
-            if(!isSell) {
-                rates.find { it.currency == selectedIndex }?.let { rate ->
+            rates.find { it.currency == selectedIndex }?.let { rate ->
+                if(isSell)
+                    onEvent(MainScreenEvent.OnUpdateSellCurrency(rate))
+                else
                     onEvent(MainScreenEvent.OnUpdateReceiveCurrency(rate))
-                }
             }
         },
         placeholder = "Currency",

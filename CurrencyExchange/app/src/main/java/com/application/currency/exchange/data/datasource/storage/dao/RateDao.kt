@@ -1,5 +1,6 @@
 package com.application.currency.exchange.data.datasource.storage.dao
 
+import android.icu.util.CurrencyAmount
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -18,6 +19,9 @@ interface RateDao {
 
     @Update
     suspend fun updateRate(vararg rate: Rate)
+
+    @Query("UPDATE table_rate SET amount = :amount WHERE currency = :currency")
+    suspend fun updateRateAmount(currency: String, amount: Float)
 
     @Query("SELECT * FROM table_rate")
     suspend fun getAllRates(): List<Rate>

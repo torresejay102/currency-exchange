@@ -7,4 +7,7 @@ import javax.inject.Inject
 class UpdateRatesUseCase @Inject constructor(
     private val repository: RateRepository) {
     suspend operator fun invoke(vararg rate: Rate) = repository.updateRate(*rate)
+
+    suspend operator fun invoke(currency: String, amount: Float) =
+        repository.updateRateAmount(currency, amount)
 }

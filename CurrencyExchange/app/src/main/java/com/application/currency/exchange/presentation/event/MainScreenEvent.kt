@@ -12,5 +12,5 @@ sealed class MainScreenEvent: BaseScreenEvent() {
     data class OnUpdateSellCurrency(val rate: Rate): MainScreenEvent()
     data class OnUpdateReceiveCurrency(val rate: Rate): MainScreenEvent()
     data object OnUpdateBalance: MainScreenEvent()
-    data object OnRefreshExchangeRate
+    data object OnRefreshExchangeRate: MainScreenEvent()
 }

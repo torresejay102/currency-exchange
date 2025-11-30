@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import com.application.currency.exchange.data.datasource.storage.preference.Preferences
 import com.application.currency.exchange.domain.entity.model.ConversionValue
 import com.application.currency.exchange.domain.entity.model.CurrencyExchangeRate
+import com.application.currency.exchange.domain.entity.model.ExchangeRateInfo
 import com.application.currency.exchange.domain.entity.model.Rate
 import com.application.currency.exchange.domain.entity.network.NetworkResult
 import com.application.currency.exchange.domain.usecase.api.GetExchangeRateUseCase
@@ -17,10 +18,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.UnsupportedEncodingException
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import javax.inject.Inject
+import kotlin.math.round
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -65,18 +68,21 @@ class MainViewModel @Inject constructor(
                 }
                 is MainScreenEvent.OnUpdateSellValue -> {
                     sellValue = event.amount
-                    updateRateValues()
+                    updateRateValues(event)
                 }
                 is MainScreenEvent.OnUpdateSellCurrency -> {
                     sellRate = event.rate
-                    updateRateValues()
+                    updateRateValues(event)
                 }
                 is MainScreenEvent.OnUpdateReceiveCurrency -> {
                     receiveRate = event.rate
-                    updateRateValues()
+                    updateRateValues(event)
                 }
                 is MainScreenEvent.OnUpdateBalance -> {
-                    updateBalances()
+                    updateBalances(event)
+                }
+                else -> {
+
                 }
             }
         }
@@ -88,6 +94,7 @@ class MainViewModel @Inject constructor(
 
                 var baseRate = rates.find { it.currency.lowercase() ==
                         currencyExchangeRate.base.lowercase() }
+                val isBaseRateInserted = baseRate != null
 
                 if(baseRate == null) {
                     baseRate = Rate(currencyExchangeRate.base,
@@ -98,24 +105,36 @@ class MainViewModel @Inject constructor(
                 }
 
                 list.forEach { key, value ->
-                    val rate = rates.find { it.currency.lowercase() == key } ?:
+                    val rate = rates.find { it.currency.lowercase() == key.lowercase() } ?:
                         Rate(key, mutableMapOf())
 
-                    if(rate.conversionMap.isEmpty()) {
+                    if(rate.conversionMap.isEmpty() && baseRate.currency != rate.currency) {
                         rates.add(rate)
                         viewModelScope.launch(Dispatchers.IO) {
                             insertRatesUseCase.invoke(rate)
                         }
                     }
 
+                    val baseConversionValue = ConversionValue(1 / value.toFloat(),
+                        currencyExchangeRate.date)
                     val conversionValue = ConversionValue(value.toFloat(),
                         currencyExchangeRate.date)
-                    rate.conversionMap[baseRate.currency] = conversionValue
-                    baseRate.conversionMap[rate.currency] = conversionValue
 
-                    viewModelScope.launch(Dispatchers.IO) {
-                        updateRatesUseCase.invoke(rate)
+                    rate.conversionMap[baseRate.currency] = conversionValue
+                    baseRate.conversionMap[rate.currency] = baseConversionValue
+
+                    if(baseRate.currency != rate.currency) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            updateRatesUseCase.invoke(rate)
+                        }
                     }
+                }
+
+                viewModelScope.launch(Dispatchers.IO) {
+                    if(isBaseRateInserted)
+                        updateRatesUseCase.invoke(baseRate)
+                    else
+                        insertRatesUseCase.invoke(baseRate)
                 }
 
                 this@MainViewModel.rates = rates.sortedBy { it.currency }
@@ -148,17 +167,17 @@ class MainViewModel @Inject constructor(
             }
         }
 
-        private fun updateRateValues() {
+        private fun updateRateValues(event: MainScreenEvent) {
             if(::sellRate.isInitialized && ::receiveRate.isInitialized) {
                 receiveRate.conversionMap[sellRate.currency]?.let {
-                    receiveValue = sellValue * it.value
-                    _state.value = MainScreenState.ReceiveValueUpdated(rates, sellValue,
-                        receiveValue, sellRate, receiveRate)
+                    receiveValue = round(sellValue * it.value * 100) / 100
+                    _state.value = MainScreenState.ReceiveValueUpdated(event,
+                        ExchangeRateInfo(rates, sellRate, receiveRate, sellValue, receiveValue))
                 }
             }
         }
 
-        private fun updateBalances() {
+        private fun updateBalances(event: MainScreenEvent) {
             receiveRate.conversionMap[sellRate.currency]?.let {
                 sellRate.amount -= sellValue
                 receiveRate.amount += receiveValue
@@ -171,9 +190,16 @@ class MainViewModel @Inject constructor(
                 rates[sellIndex] = sellRate
                 rates[receiveIndex] = receiveRate
 
+                viewModelScope.launch(Dispatchers.IO) {
+                    updateRatesUseCase.invoke(receiveRate.currency,
+                        receiveRate.amount)
+                    updateRatesUseCase.invoke(sellRate.currency,
+                        sellRate.amount)
+                }
+
                 _state.value = MainScreenState.ReceiveValueUpdated(
-                    rates, sellValue,
-                    receiveValue, sellRate, receiveRate
+                    event,
+                    ExchangeRateInfo(rates, sellRate, receiveRate, sellValue, receiveValue)
                 )
             }
         }
