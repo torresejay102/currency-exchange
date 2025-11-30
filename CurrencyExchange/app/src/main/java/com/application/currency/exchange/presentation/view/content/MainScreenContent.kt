@@ -1,5 +1,6 @@
 package com.application.currency.exchange.presentation.view.content
 
+import android.R.attr.textStyle
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
@@ -26,15 +28,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,101 +76,178 @@ import kotlin.math.round
 fun MainScreenContent(state: MainScreenState, onEvent: (MainScreenEvent) -> Unit,
                       paddingValues: PaddingValues? = null) {
 
-    val rates = remember { mutableStateListOf<Rate>() }
-    CurrencyConverterContent(paddingValues, onEvent, state, rates)
+    val autoRefreshInterval = 5000L
+    val balanceRates = remember { mutableStateListOf<Rate>() }
+
+    LaunchedEffect(Unit) {
+        while(true) {
+            delay(autoRefreshInterval)
+            onEvent(MainScreenEvent.OnRefreshExchangeRate)
+        }
+    }
+
+    CurrencyConverterContent(paddingValues, onEvent, state,balanceRates)
 }
 
 @Composable
 fun CurrencyConverterContent(paddingValues: PaddingValues?, onEvent: (MainScreenEvent) -> Unit,
-                             state: MainScreenState, ratesSnapShot: SnapshotStateList<Rate>) {
+                             state: MainScreenState, balanceRatesSnapShot: SnapshotStateList<Rate>) {
     val headerFontSize = 20.sp
 
-    var info: ExchangeRateInfo? = null
+    var info by remember { mutableStateOf<ExchangeRateInfo?>(null) }
+    var showDialog by remember { mutableStateOf(false) }
+    var dialogMessage by remember { mutableStateOf("") }
 
     if(state is MainScreenState.Success)
         info = ExchangeRateInfo(state.list)
-    else if(state is MainScreenState.ReceiveValueUpdated)
+    else if(state is MainScreenState.UIUpdated)
         info = state.info
+    else if(state is MainScreenState.AutoRefreshSuccess)
+        info = state.info
+    else if(state is MainScreenState.BalanceUpdated) {
+        info = state.info
+        showDialog = true
+        dialogMessage = state.message
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-            .padding(paddingValues ?: PaddingValues(0.dp))
-            .padding(PaddingValues(20.dp))
-            .imePadding()
-    ) {
-        info?.let {
-            val rates = it.rates
-            ratesSnapShot.clear()
-            ratesSnapShot.addAll(rates.filter { it.amount > 0 }
-                .sortedByDescending { it.amount })
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .background(Color.White)
+        .padding(paddingValues ?: PaddingValues(0.dp))) {
 
-            Text(
-                stringResource(R.string.my_balances).toUpperCase(Locale.current),
-                fontSize = headerFontSize,
-                color = Color.DarkGray)
+        Column(
+            modifier = Modifier
+                .wrapContentHeight()
+                .fillMaxWidth()
+                .height(40.dp)
+                .padding(top = 0.dp, bottom = 0.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if(state is MainScreenState.AutoRefreshLoading) {
+                Text("Refreshing".uppercase(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .background(Color.Red)
+                        .padding(top = 5.dp, bottom = 5.dp),
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.Medium),
+                    fontSize = 20.sp,
+                    color = Color.White
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White)
+                .padding(PaddingValues(20.dp))
+                .imePadding()
+        ) {
+            info?.let {
+                val rates = it.rates
+                balanceRatesSnapShot.clear()
+                balanceRatesSnapShot.addAll(rates.filter { it.amount > 0 }
+                    .sortedByDescending { it.amount })
 
-            // Balance List
-            LazyRow(
-                contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(30.dp)
-            ) {
-                items(items = ratesSnapShot, itemContent = {rate: Rate ->
-                    Text("${rate.amount} ${rate.currency}",
-                        fontSize = 18.sp, color = Color.Black)
-                })
+                Text(
+                    stringResource(R.string.my_balances).toUpperCase(Locale.current),
+                    fontSize = headerFontSize,
+                    color = Color.DarkGray)
+
+                // Balance List
+                LazyRow(
+                    contentPadding = PaddingValues(top = 20.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(30.dp)
+                ) {
+                    items(items = balanceRatesSnapShot, itemContent = {rate: Rate ->
+                        Text("${rate.amount} ${rate.currency}",
+                            fontSize = 18.sp, color = Color.Black)
+                    })
+                }
+
+                Text(
+                    stringResource(R.string.app_name).toUpperCase(Locale.current),
+                    modifier = Modifier.padding(PaddingValues(top = 20.dp)),
+                    fontSize = headerFontSize,
+                    color = Color.DarkGray)
+
+                SellRowView(it, onEvent)
+
+                ReceiveRowView(it, onEvent)
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
+                    shape = RoundedCornerShape(30.dp),
+                    modifier = Modifier
+                        .padding(top = 60.dp, bottom = 40.dp)
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
+                        contentColor = Color.White)
+                ) {
+                    Text(stringResource(R.string.submit), fontSize = 18.sp)
+                }
             }
 
-            Text(
-                stringResource(R.string.app_name).toUpperCase(Locale.current),
-                modifier = Modifier.padding(PaddingValues(top = 20.dp)),
-                fontSize = headerFontSize,
-                color = Color.DarkGray)
+            if (showDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDialog = false },
+                    title = {
+                        Text(
+                            stringResource(R.string.currency_converted),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight =
+                                FontWeight.Medium),
+                            fontSize = 20.sp
+                        )
+                    },
+                    text = {
+                        Text(dialogMessage,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight =
+                                FontWeight.Medium),
+                            fontSize = 16.sp
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showDialog = false
+                        }) {
+                            Text("Done")
+                        }
+                    }
+                )
+            }
 
-            SellRowView(info, onEvent)
+            if(state is MainScreenState.Loading) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    ProgressDialog()
+                }
+            }
 
-            ReceiveRowView(info, onEvent)
+            if(state is MainScreenState.Error) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues ?: PaddingValues(0.dp)),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(stringResource(R.string.currency_converter_unavailable))
 
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(onClick = { onEvent(MainScreenEvent.OnUpdateBalance)},
-                shape = RoundedCornerShape(30.dp),
-                modifier = Modifier
-                    .padding(top = 60.dp, bottom = 40.dp)
-                    .fillMaxWidth()
-                    .height(60.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colorResource(R.color.primary_color),
-                    contentColor = Color.White)
-            ) {
-                Text(stringResource(R.string.submit), fontSize = 18.sp)
+                    Toast.makeText(LocalContext.current,
+                        state.errorMessage, Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
-        if(state is MainScreenState.Loading) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                ProgressDialog()
-            }
-        }
-
-        if(state is MainScreenState.Error) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues ?: PaddingValues(0.dp)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(stringResource(R.string.currency_converter_unavailable))
-
-                Toast.makeText(LocalContext.current,
-                    state.errorMessage, Toast.LENGTH_SHORT).show()
-            }
-        }
     }
 }
 
@@ -274,7 +356,8 @@ fun ReceiveRowView(info: ExchangeRateInfo,
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Text(receiveAmount.toString(), modifier = Modifier.wrapContentWidth()
+        Text(receiveAmount.toString(), modifier = Modifier
+            .wrapContentWidth()
             .widthIn(40.dp, 120.dp)
             .padding(start = 20.dp, end = 10.dp),
             color = colorResource(R.color.green))

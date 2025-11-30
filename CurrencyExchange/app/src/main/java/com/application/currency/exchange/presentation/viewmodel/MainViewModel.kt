@@ -18,7 +18,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.UnsupportedEncodingException
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
@@ -52,7 +51,7 @@ class MainViewModel @Inject constructor(
             when(event) {
                 is MainScreenEvent.OnGetExchangeRate -> {
                     _state.value = MainScreenState.Loading
-                    callExchangeRateService()
+                    callExchangeRateService(event)
                 }
                 is MainScreenEvent.OnInitSellValue -> {
                     sellValue = event.amount
@@ -79,15 +78,17 @@ class MainViewModel @Inject constructor(
                     updateRateValues(event)
                 }
                 is MainScreenEvent.OnUpdateBalance -> {
-                    updateBalances(event)
+                    updateBalances()
                 }
-                else -> {
-
+                is MainScreenEvent.OnRefreshExchangeRate -> {
+                    _state.value = MainScreenState.AutoRefreshLoading
+                    callExchangeRateService(event)
                 }
             }
         }
 
-        private fun updateExchangeRates(currencyExchangeRate: CurrencyExchangeRate) {
+        private fun updateExchangeRates(currencyExchangeRate: CurrencyExchangeRate,
+                                        event: MainScreenEvent) {
             viewModelScope.launch(Dispatchers.IO) {
                 val list = currencyExchangeRate.rates
                 val rates = getAllRatesUseCase.invoke().toMutableList()
@@ -137,13 +138,12 @@ class MainViewModel @Inject constructor(
                         insertRatesUseCase.invoke(baseRate)
                 }
 
-                this@MainViewModel.rates = rates.sortedBy { it.currency }
-                    .toMutableList()
-                _state.value = MainScreenState.Success(this@MainViewModel.rates)
+                this@MainViewModel.rates = rates.sortedBy { it.currency }.toMutableList()
+                sendBackRates(event)
             }
         }
 
-        private fun callExchangeRateService() {
+        private fun callExchangeRateService(event: MainScreenEvent) {
             viewModelScope.launch(Dispatchers.IO + coroutineExceptionHandler) {
                 val result = getCurrencyExchangeRateUseCase.invoke()
                 when(result) {
@@ -159,9 +159,19 @@ class MainViewModel @Inject constructor(
                         val str = convertAnyToString(result.data)
                         val hash = calculateSHA256(str)
                         hash?.let {
-                            preferences.saveGetExchangeRateResponseHash(it)
+                            val localHash = preferences.retrieveGetExchangeRateResponseHash()
+                            if(localHash == it) {
+                                rates = getAllRatesUseCase.invoke()
+                                    .sortedBy { it.currency }.toMutableList()
+                                sendBackRates(event)
+                            }
+                            else {
+                                preferences.saveGetExchangeRateResponseHash(it)
+                                updateExchangeRates(result.data, event)
+                            }
+                        } ?: run {
+                            updateExchangeRates(result.data, event)
                         }
-                        updateExchangeRates(result.data)
                     }
                 }
             }
@@ -171,14 +181,19 @@ class MainViewModel @Inject constructor(
             if(::sellRate.isInitialized && ::receiveRate.isInitialized) {
                 receiveRate.conversionMap[sellRate.currency]?.let {
                     receiveValue = round(sellValue * it.value * 100) / 100
-                    _state.value = MainScreenState.ReceiveValueUpdated(event,
+                    _state.value = MainScreenState.UIUpdated(event,
                         ExchangeRateInfo(rates, sellRate, receiveRate, sellValue, receiveValue))
                 }
             }
         }
 
-        private fun updateBalances(event: MainScreenEvent) {
+        private fun updateBalances() {
+            if(sellValue == 0f)
+                return
             receiveRate.conversionMap[sellRate.currency]?.let {
+                val prevSellValue = sellValue
+                val prevReceiveValue = receiveValue
+
                 sellRate.amount -= sellValue
                 receiveRate.amount += receiveValue
                 sellValue = sellRate.amount
@@ -197,10 +212,21 @@ class MainViewModel @Inject constructor(
                         sellRate.amount)
                 }
 
-                _state.value = MainScreenState.ReceiveValueUpdated(
-                    event,
-                    ExchangeRateInfo(rates, sellRate, receiveRate, sellValue, receiveValue)
-                )
+                val message = "You have converted $prevSellValue ${sellRate.currency} to " +
+                        "$prevReceiveValue ${receiveRate.currency}."
+
+                _state.value = MainScreenState.BalanceUpdated(ExchangeRateInfo(rates, sellRate,
+                    receiveRate, sellValue, receiveValue), message)
+            }
+        }
+
+        private fun sendBackRates(event: MainScreenEvent) {
+            if(::rates.isInitialized) {
+                if (event is MainScreenEvent.OnGetExchangeRate)
+                    _state.value = MainScreenState.Success(rates)
+                else if (event is MainScreenEvent.OnRefreshExchangeRate)
+                    _state.value = MainScreenState.AutoRefreshSuccess(ExchangeRateInfo(rates,
+                        sellRate, receiveRate, sellValue, receiveValue))
             }
         }
 

@@ -10,7 +10,8 @@ sealed class MainScreenState: BaseScreenState() {
     data class Error(val errorMessage: String) : MainScreenState()
     data class Success(val list: List<Rate>) : MainScreenState()
     object AutoRefreshLoading : MainScreenState()
-    data class AutoRefreshSuccess(val list: List<Rate>) : MainScreenState()
-    data class ReceiveValueUpdated(val sourceEvent: MainScreenEvent,
-                                   val info: ExchangeRateInfo): MainScreenState()
+    data class AutoRefreshSuccess(val info: ExchangeRateInfo) : MainScreenState()
+    data class UIUpdated(val sourceEvent: MainScreenEvent,
+                         val info: ExchangeRateInfo): MainScreenState()
+    data class BalanceUpdated(val info: ExchangeRateInfo, val message: String): MainScreenState()
 }
