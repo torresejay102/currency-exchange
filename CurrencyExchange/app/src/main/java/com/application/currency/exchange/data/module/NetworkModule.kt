@@ -1,8 +1,8 @@
 package com.application.currency.exchange.data.module
 
-import com.application.currency.exchange.data.datasource.api.service.CurrencyExchangeRateService
-import com.application.currency.exchange.data.repository.CurrencyExchangeRateRepository
-import com.application.currency.exchange.data.repository.CurrencyExchangeRateRepositoryImpl
+import com.application.currency.exchange.data.datasource.api.service.ExchangeRateService
+import com.application.currency.exchange.data.repository.api.ApiRepository
+import com.application.currency.exchange.data.repository.api.ApiRepositoryImpl
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -28,13 +28,13 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideCurrencyExchangeRateService(retrofit: Retrofit): CurrencyExchangeRateService {
-        return retrofit.create(CurrencyExchangeRateService::class.java)
+    fun provideCurrencyExchangeRateService(retrofit: Retrofit): ExchangeRateService {
+        return retrofit.create(ExchangeRateService::class.java)
     }
 
     @Provides
     @Singleton
-    fun provideCurrencyExchangeRateRepository(service: CurrencyExchangeRateService): CurrencyExchangeRateRepository {
-        return CurrencyExchangeRateRepositoryImpl(service)
+    fun provideCurrencyExchangeRateRepository(service: ExchangeRateService): ApiRepository {
+        return ApiRepositoryImpl(service)
     }
 }
