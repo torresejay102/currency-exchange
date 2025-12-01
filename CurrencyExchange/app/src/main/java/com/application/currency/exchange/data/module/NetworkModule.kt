@@ -1,6 +1,7 @@
 package com.application.currency.exchange.data.module
 
 import android.content.Context
+import android.net.ConnectivityManager
 import com.application.currency.exchange.data.datasource.api.service.ExchangeRateService
 import com.application.currency.exchange.data.datasource.api.util.NetworkUtil
 import com.application.currency.exchange.data.repository.api.ApiRepository
@@ -45,6 +46,8 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideNetworkUtil(@ApplicationContext context: Context): NetworkUtil {
-        return NetworkUtil(context)
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as ConnectivityManager
+        return NetworkUtil(connectivityManager)
     }
 }
