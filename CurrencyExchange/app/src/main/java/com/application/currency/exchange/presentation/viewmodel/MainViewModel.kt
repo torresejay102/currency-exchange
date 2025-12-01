@@ -1,6 +1,7 @@
 package com.application.currency.exchange.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
+import com.application.currency.exchange.data.datasource.api.util.NetworkUtil
 import com.application.currency.exchange.data.datasource.storage.preference.Preferences
 import com.application.currency.exchange.domain.entity.model.ConversionValue
 import com.application.currency.exchange.domain.entity.model.CurrencyExchangeRate
@@ -22,7 +23,6 @@ import java.io.UnsupportedEncodingException
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import javax.inject.Inject
-import kotlin.math.round
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -31,19 +31,18 @@ class MainViewModel @Inject constructor(
     private val updateRatesUseCase: UpdateRatesUseCase,
     private val getAllRatesUseCase: GetAllRatesUseCase,
     private val preferences: Preferences):
-
     BaseViewModel<MainScreenEvent, List<Rate>>(MainScreenState.None) {
-        private val startingCurrency = "EUR"
-        private val startingAmount = 1000f
 
-        private var sellValue = 0.0f
-        private var receiveValue = 0.0f
+        private val startingCurrency = "EUR"
+        private val startingAmount = 1000.0
+
+        private var sellValue = 0.0
+        private var receiveValue = 0.0
         private lateinit var sellRate: Rate
         private lateinit var receiveRate: Rate
         private lateinit var rates: MutableList<Rate>
 
         private var hasExchangeRateInfoInit = false
-        private val eventList = mutableListOf<MainScreenEvent>()
 
         private val coroutineExceptionHandler = CoroutineExceptionHandler{_, throwable ->
             throwable.printStackTrace()
@@ -82,54 +81,40 @@ class MainViewModel @Inject constructor(
                                         event: MainScreenEvent) {
             viewModelScope.launch(Dispatchers.IO) {
                 val list = currencyExchangeRate.rates
-                val rates = getAllRatesUseCase.invoke().toMutableList()
+                var rateList = mutableListOf<Rate>()
 
-                var baseRate = rates.find { it.currency.lowercase() ==
+                if(!::rates.isInitialized)
+                    rateList = getAllRatesUseCase.invoke().toMutableList()
+
+                var baseRate = rateList.find { it.currency.lowercase() ==
                         currencyExchangeRate.base.lowercase() }
-                val isBaseRateInserted = baseRate != null
 
                 if(baseRate == null) {
                     baseRate = Rate(currencyExchangeRate.base,
                         mutableMapOf())
-                    rates.add(baseRate)
+                    rateList.add(baseRate)
                     if (baseRate.currency == startingCurrency)
                         baseRate.amount = startingAmount
                 }
 
                 list.forEach { key, value ->
-                    val rate = rates.find { it.currency.lowercase() == key.lowercase() } ?:
+                    val rate = rateList.find { it.currency.lowercase() == key.lowercase() } ?:
                         Rate(key, mutableMapOf())
 
                     if(rate.conversionMap.isEmpty() && baseRate.currency != rate.currency) {
-                        rates.add(rate)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            insertRatesUseCase.invoke(rate)
-                        }
+                        rateList.add(rate)
                     }
 
-                    val baseConversionValue = ConversionValue(1 / value.toFloat(),
+                    val baseConversionValue = ConversionValue(1 / value.toDouble(),
                         currencyExchangeRate.date)
-                    val conversionValue = ConversionValue(value.toFloat(),
+                    val conversionValue = ConversionValue(value.toDouble(),
                         currencyExchangeRate.date)
 
                     rate.conversionMap[baseRate.currency] = conversionValue
                     baseRate.conversionMap[rate.currency] = baseConversionValue
-
-                    if(baseRate.currency != rate.currency) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            updateRatesUseCase.invoke(rate)
-                        }
-                    }
                 }
 
-                viewModelScope.launch(Dispatchers.IO) {
-                    if(isBaseRateInserted)
-                        updateRatesUseCase.invoke(baseRate)
-                    else
-                        insertRatesUseCase.invoke(baseRate)
-                }
-
-                this@MainViewModel.rates = rates.sortedBy { it.currency }.toMutableList()
+                this@MainViewModel.rates = rateList.sortedBy { it.currency }.toMutableList()
                 sendBackRates(event)
             }
         }
@@ -139,8 +124,32 @@ class MainViewModel @Inject constructor(
                 val result = getCurrencyExchangeRateUseCase.invoke()
                 when(result) {
                     is NetworkResult.Error -> {
-                        _state.value = MainScreenState.Error(
-                            result.message.orEmpty())
+                        val errorCode = result.code
+                        if(errorCode == NetworkUtil.CODE_NO_INTERNET_CONNECTION) {
+                            var dbRates: MutableList<Rate>
+                            if(!::rates.isInitialized) {
+                                dbRates = getAllRatesUseCase.invoke()
+                                    .sortedBy { it.currency }.toMutableList()
+                            } else
+                                dbRates = rates
+
+                            if(dbRates.isNotEmpty()) {
+                                rates = dbRates
+                                if(!hasExchangeRateInfoInit) {
+                                    resetExchangeRateInfo()
+                                    hasExchangeRateInfoInit = true
+                                }
+                                _state.value = MainScreenState.Offline(ExchangeRateInfo(rates,
+                                    sellRate, receiveRate, sellValue, receiveValue))
+                            }
+                            else
+                                _state.value = MainScreenState.Offline(null)
+                        }
+                        else {
+                            _state.value = MainScreenState.Error(
+                                result.message.orEmpty()
+                            )
+                        }
                         removeEvent()
                     }
                     is NetworkResult.Exception -> {
@@ -173,8 +182,15 @@ class MainViewModel @Inject constructor(
 
         private fun updateRateValues(event: MainScreenEvent) {
             if(::sellRate.isInitialized && ::receiveRate.isInitialized) {
+                if(sellValue > sellRate.amount)
+                    sellValue = sellRate.amount
+                if(sellRate.currency == receiveRate.currency)
+                    receiveRate = rates.find {
+                        receiveRate.conversionMap.contains(sellRate.currency) &&
+                                receiveRate.currency != sellRate.currency
+                    } ?: rates[0]
                 receiveRate.conversionMap[sellRate.currency]?.let {
-                    receiveValue = round(sellValue * it.value * 100) / 100
+                    receiveValue = sellValue * it.value
                     _state.value = MainScreenState.UIUpdated(event,
                         ExchangeRateInfo(rates, sellRate, receiveRate, sellValue, receiveValue))
                 }
@@ -183,30 +199,24 @@ class MainViewModel @Inject constructor(
         }
 
         private fun updateBalances() {
-            if(sellValue == 0f) {
+            if(sellValue == 0.0) {
                 removeEvent()
                 return
             }
             receiveRate.conversionMap[sellRate.currency]?.let {
-                val prevSellValue = sellValue
-                val prevReceiveValue = receiveValue
-
                 sellRate.amount -= sellValue
                 receiveRate.amount += receiveValue
-                sellValue = sellRate.amount
-                receiveValue = sellValue * it.value
 
-                viewModelScope.launch(Dispatchers.IO) {
-                    updateRatesUseCase.invoke(receiveRate.currency,
-                        receiveRate.amount)
-                    updateRatesUseCase.invoke(sellRate.currency,
-                        sellRate.amount)
-                }
-
-                val message = "You have converted $prevSellValue ${sellRate.currency} to " +
-                        "$prevReceiveValue ${receiveRate.currency}."
+                val message = "You have converted ${formatDoubleToTwoDecimals(sellValue)} " +
+                        "${sellRate.currency} to " + "${formatDoubleToTwoDecimals(
+                    receiveValue)} ${receiveRate.currency}."
 
                 resetExchangeRateInfo()
+
+                if(formatDoubleToTwoDecimals(sellRate.amount).toDouble() == 0.0)
+                    sellRate.amount = 0.0
+                if(formatDoubleToTwoDecimals(receiveRate.amount).toDouble() == 0.0)
+                    receiveRate.amount = 0.0
 
                 _state.value = MainScreenState.BalanceUpdated(ExchangeRateInfo(rates, sellRate,
                     receiveRate, sellValue, receiveValue), message)
@@ -215,14 +225,32 @@ class MainViewModel @Inject constructor(
         }
 
         private fun resetExchangeRateInfo() {
-            sellRate = rates.filter { it.amount > 0 }[0]
-            sellValue = sellRate.amount
+            val sellRates = rates.filter { it.amount > 0 }
+
+            if(::sellRate.isInitialized) {
+                if (sellRates.find { it.currency == sellRate.currency } == null)
+                    sellRate = sellRates[0]
+                if (sellValue > sellRate.amount)
+                    sellValue = sellRate.amount
+            }
+            else {
+                sellRate = sellRates[0]
+                sellValue = sellRate.amount
+            }
 
             val receiveRates = rates.filter { it.conversionMap.contains(sellRate.currency) }
-            receiveRate = receiveRates[0]
+
+            if(::receiveRate.isInitialized) {
+                if (receiveRates.find { it.currency == receiveRate.currency  &&
+                            it.currency != sellRate.currency} == null)
+                    receiveRate = receiveRates[0]
+            }
+            else
+                receiveRate = receiveRates[0]
+
             receiveValue = receiveRate.conversionMap[sellRate.currency]?.value?.let {
-                round(it * sellValue * 100) / 100
-            } ?: 0f
+                it * sellValue
+            } ?: 0.0
         }
 
         private fun sendBackRates(event: MainScreenEvent) {
@@ -262,6 +290,16 @@ class MainViewModel @Inject constructor(
             } catch (e: UnsupportedEncodingException) {
                 e.printStackTrace()
                 return null
+            }
+        }
+
+        private fun formatDoubleToTwoDecimals(number: Double): String {
+            return "%.2f".format(number)
+        }
+
+        fun saveDatabaseDetails() {
+            viewModelScope.launch(Dispatchers.IO) {
+                insertRatesUseCase.invoke(*rates.toTypedArray())
             }
         }
 }

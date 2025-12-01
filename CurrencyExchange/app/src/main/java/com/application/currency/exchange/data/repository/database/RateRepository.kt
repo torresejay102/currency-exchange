@@ -12,7 +12,7 @@ interface RateRepository {
     fun insertRate(vararg rate: Rate)
     fun deleteRate(vararg rate: Rate)
     fun updateRate(vararg rate: Rate)
-    fun updateRateAmount(currency: String, amount: Float)
+    fun updateRateAmount(currency: String, amount: Double)
     suspend fun getAllRates(): List<Rate>
 }
 
@@ -35,7 +35,7 @@ class RateRepositoryImpl @Inject constructor(private val rateDao: RateDao) : Rat
         }
     }
 
-    override fun updateRateAmount(currency: String, amount: Float) {
+    override fun updateRateAmount(currency: String, amount: Double) {
         CoroutineScope(Dispatchers.IO).launch {
             rateDao.updateRateAmount(currency, amount)
         }

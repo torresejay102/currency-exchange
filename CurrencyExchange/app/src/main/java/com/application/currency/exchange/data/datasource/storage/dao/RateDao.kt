@@ -11,7 +11,7 @@ import com.application.currency.exchange.domain.entity.model.Rate
 
 @Dao
 interface RateDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRate(vararg rate: Rate)
 
     @Delete
@@ -21,7 +21,7 @@ interface RateDao {
     suspend fun updateRate(vararg rate: Rate)
 
     @Query("UPDATE table_rate SET amount = :amount WHERE currency = :currency")
-    suspend fun updateRateAmount(currency: String, amount: Float)
+    suspend fun updateRateAmount(currency: String, amount: Double)
 
     @Query("SELECT * FROM table_rate")
     suspend fun getAllRates(): List<Rate>

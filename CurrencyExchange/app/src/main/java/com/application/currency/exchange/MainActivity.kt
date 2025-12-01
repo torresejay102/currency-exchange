@@ -20,17 +20,25 @@ import kotlin.jvm.java
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private lateinit var mainViewModel: MainViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setStatusBarColor(window, resources.getColor(R.color.primary_color,
             null))
+
         setContent {
-            val mainViewModel: MainViewModel = hiltViewModel()
+            mainViewModel = hiltViewModel()
             val state = mainViewModel.state.collectAsStateWithLifecycle().value
             MainScreen(state as MainScreenState, mainViewModel::queueEvent)
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        mainViewModel.saveDatabaseDetails()
     }
 
     // Updates the Status Bar Color

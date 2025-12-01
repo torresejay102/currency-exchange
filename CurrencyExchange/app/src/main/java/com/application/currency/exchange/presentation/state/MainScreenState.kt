@@ -14,4 +14,5 @@ sealed class MainScreenState: BaseScreenState() {
     data class UIUpdated(val sourceEvent: MainScreenEvent,
                          val info: ExchangeRateInfo): MainScreenState()
     data class BalanceUpdated(val info: ExchangeRateInfo, val message: String): MainScreenState()
+    data class Offline(val info: ExchangeRateInfo?): MainScreenState()
 }

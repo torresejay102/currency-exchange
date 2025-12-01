@@ -1,6 +1,5 @@
 package com.application.currency.exchange.presentation.viewmodel
 
-import android.util.Log.e
 import androidx.lifecycle.ViewModel
 import com.application.currency.exchange.presentation.event.BaseScreenEvent
 import com.application.currency.exchange.presentation.state.BaseScreenState
